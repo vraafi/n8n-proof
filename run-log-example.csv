@@ -1,0 +1,11 @@
+triggered_at,record_id,action_taken,status
+2026-11-01T07:09:00,order:1001,"Appended row to Follow-ups",SUCCESS
+2026-11-02T06:58:00,order:1002,"Appended row to Follow-ups",SUCCESS
+2026-11-03T06:56:00,order:1003,"Appended row to Follow-ups",SUCCESS
+2026-11-04T06:59:00,order:1004,"Appended row to Follow-ups",SUCCESS
+2026-11-05T06:59:00,order:1005,"Appended row to Follow-ups",SUCCESS
+2026-11-05T17:59:00,order:2005,"Appended row to Follow-ups",SUCCESS
+2026-11-06T06:59:00,order:1006,"Appended row to Follow-ups",SUCCESS
+2026-11-07T07:01:00,order:1007,"FAILED: 429 Too Many Requests [line 1]",FAILED
+2026-11-08T07:00:00,order:1008,"Appended row to Follow-ups",SUCCESS
+2026-11-09T06:59:00,order:1009,"Appended row to Follow-ups",SUCCESS
