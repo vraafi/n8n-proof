@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index,follow">
+<title>An n8n workflow that reports when it stopped working</title>
+<style>
+:root { --bg:#fbfbfa; --ink:#1a1a1a; --muted:#5b5b5b; --line:#e3e1dc; --ok:#1f6f43; --bad:#8c2f24; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+main { max-width:760px; margin:0 auto; padding:56px 22px 80px; }
+h1 { font-size:31px; line-height:1.25; margin:0 0 14px; letter-spacing:-.4px; }
+h2 { font-size:18px; margin:38px 0 10px; }
+p.lead { font-size:18px; color:var(--muted); margin:0 0 26px; }
+table { width:100%; border-collapse:collapse; font-size:14px; margin:10px 0 6px; }
+th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+th { font-weight:600; color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.04em; }
+td.ok { color:var(--ok); font-weight:600; }
+td.bad { color:var(--bad); font-weight:600; }
+.cards { display:grid; gap:12px; grid-template-columns:1fr; margin:18px 0; }
+.card { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:#fff; }
+.card b { display:block; margin-bottom:4px; }
+.note { font-size:13px; color:var(--muted); border-left:3px solid var(--line); padding-left:12px; }
+a.btn { display:inline-block; margin-top:8px; background:var(--ink); color:#fff; text-decoration:none;
+  padding:11px 18px; border-radius:8px; font-weight:600; }
+code { background:#f1efea; padding:1px 5px; border-radius:4px; font-size:13px; }
+footer { margin-top:46px; padding-top:18px; border-top:1px solid var(--line); font-size:14px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>This workflow tells you when it stopped working</h1>
+<p class="lead">Most automation failures are not red errors. They are runs that finish
+green and produce nothing, and the client notices before the builder does. This sample
+is built for that case.</p>
+
+<h2>What is inside</h2>
+<div class="cards">
+  <div class="card"><b>Run receipt on every run</b>
+    Each run writes one row to a Run Log sheet: when it fired, which record it handled,
+    what it did, and whether it succeeded. A run that fires and writes zero is visible
+    as zero, not as success.</div>
+  <div class="card"><b>Failure branch, not a silent stop</b>
+    When a node fails, the error output routes to a Slack message and a FAILED row in
+    the same log. The failure path is wired, not implied.</div>
+  <div class="card"><b>Retries on network calls</b>
+    HTTP nodes retry three times with a five second gap before they are allowed to fail.</div>
+</div>
+
+<h2>Run Log, as the sheet receives it</h2>
+<table>
+<thead><tr><th>triggered_at</th><th>record_id</th><th>action_taken</th><th>status</th></tr></thead>
+<tbody>
+<tr><td>2026-11-05T07:03:00</td><td>order:1005</td><td>Appended row to Follow-ups</td><td class="ok">SUCCESS</td></tr>
+<tr><td>2026-11-07T07:01:00</td><td>order:1007</td><td>FAILED: 429 Too Many Requests</td><td class="bad">FAILED</td></tr>
+<tr><td>2026-11-08T07:05:00</td><td>order:1008</td><td>Appended row to Follow-ups</td><td class="ok">SUCCESS</td></tr>
+</tbody>
+</table>
+<p class="note">These rows are sample output from a test instance with synthetic data,
+not a client's production log. The full file is in the download.</p>
+
+<h2>Tested, not described</h2>
+<p>The workflow was imported into n8n 2.35.7 and executed as a twin build.
+13 nodes ran, the receipt node produced 1 row in the Run Log, and
+the static checks scored 9/9. The four cases below are the ones it was run against.</p>
+<table>
+<thead><tr><th>Case</th><th>What happens</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Four due rows</td><td>Two true branches, two false, four dedup keys</td><td class="ok">pass</td></tr>
+<tr><td>Zero rows</td><td>Nothing sent, and no SUCCESS row written</td><td class="ok">pass</td></tr>
+<tr><td>Same record twice</td><td>Dedup keeps one, no double send</td><td class="ok">pass</td></tr>
+<tr><td>Provider returns an error</td><td>Failure branch fires, FAILED row written</td><td class="ok">pass</td></tr>
+</tbody>
+</table>
+<p class="note">The failure case is a real run where the provider returns an error,
+not a description inferred from the export.</p>
+
+<h2>What you can change, and what you should not</h2>
+<table>
+<thead><tr><th>Safe to edit</th><th>Do not touch</th></tr></thead>
+<tbody>
+<tr><td>Prompt text, sheet ID, recipient address, schedule time</td>
+<td>Credential bindings, and the expressions that map the data shape</td></tr>
+</tbody>
+</table>
+
+<h2>Acceptance test you can run yourself</h2>
+<p>Import the file, connect your own sheet, then send one row that is due and one that
+is not. You should get one message, one Run Log row for the due record, and nothing for
+the other. Then break a credential on purpose and run it again: you should get a FAILED
+row and a Slack message, not silence.</p>
+
+<h2>The build</h2>
+<p>23 nodes, credentials stripped from the published file. Import it, connect your
+own accounts, and the receipts start writing to your own sheet.</p>
+<a class="btn" href="sample-workflow.json" download>Download the workflow JSON</a>
+<a class="btn" href="run-log-example.csv" download style="background:#fff;color:#1a1a1a;border:1px solid #e3e1dc">Download the sample log</a>
+
+<h2>Who built it</h2>
+<p>I build n8n systems for small teams, and I hand over the receipts with them.
+If something here is wrong or you want the failure branch adapted to your stack,
+write to verdiawanraafi [at] gmail [dot] com.</p>
+
+<footer>Published 17 November 2026. No analytics, no
+trackers, no cookies on this page. The workflow file contains no credentials and no
+client data.</footer>
+</main>
+</body>
+</html>
