@@ -1,0 +1,675 @@
+{
+ "name": "Chase lead that went quiet for 2 days",
+ "description": "In a marketing agency: inbound leads from the website form have had no update for more than 2 days, and nobody has followed up, so the problem surfaces only when it is urgent. This workflow every lead older than 2 days is routed to the right person with a ready-to-send message.",
+ "nodes": [
+  {
+   "parameters": {
+    "content": "HOW IT WORKS\n\nChase lead that went quiet for 2 days. Every lead older than 2 days is routed to the right person with a ready-to-send message.\n\nThe run follows this order:\n1. Days since the last update\n2. Mark rows older than 2 days\n3. Build the message\n4. Email the contact\n\nRows are de-duplicated on record_id before anything is sent, and rows whose status is already terminal are skipped, so a second run never sends the same message twice.\n\nSETUP\n\n1. Open the CONFIG node and replace every {{PLACEHOLDER}} value.\n2. Fill: SHEET_ID, SHEET_NAME, SENDER_EMAIL, ALERT_CHANNEL.\n3. Attach these credentials: gmailOAuth2.\n4. Enable the nodes marked DISABLED once their credential is attached.\n5. Run once with CONFIG.test_mode = 'normal' and check the output.\n6. Activate the workflow.",
+    "height": 560,
+    "width": 760,
+    "color": 1
+   },
+   "name": "How it works and setup",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -320,
+    0
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "content": "Reads the source rows, removes duplicates, then applies the decision rules. Nothing leaves this section.",
+    "height": 150,
+    "width": 340,
+    "color": 7
+   },
+   "name": "Note - read and check",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -320,
+    640
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "content": "Only rows where needs_action is true continue. Everything else leaves through the false output.",
+    "height": 150,
+    "width": 340,
+    "color": 7
+   },
+   "name": "Note - decision",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    120,
+    640
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "content": "Builds the message and performs the action. A failed delivery is logged instead of silently dropped.",
+    "height": 150,
+    "width": 340,
+    "color": 7
+   },
+   "name": "Note - action",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    560,
+    640
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "days",
+       "daysInterval": 1,
+       "triggerAtHour": 8,
+       "triggerAtMinute": 0
+      }
+     ]
+    }
+   },
+   "name": "Schedule daily run",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    40,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "raw",
+    "jsonOutput": "{\n  \"sheet_id\": \"{{SHEET_ID}}\",\n  \"sheet_name\": \"{{SHEET_NAME}}\",\n  \"sender_email\": \"{{SENDER_EMAIL}}\",\n  \"alert_channel\": \"{{ALERT_CHANNEL}}\",\n  \"max_items\": 50,\n  \"test_mode\": \"normal\",\n  \"simulate_provider_failure\": false,\n  \"terminal_status\": [\n    \"done\"\n  ],\n  \"batas_hari\": 2,\n  \"ambang_nilai\": 1,\n  \"message_template\": \"Hi {{name}}, your lead (budget range) has been waiting {{days}} days without an update. We have flagged it as qualified pending and will follow up within one business day. If it is already handled, reply and we will close it.\",\n  \"subject_template\": \"{{item}} still needs attention after {{days}} days\",\n  \"run_log_sheet\": \"Run Log\",\n  \"slack_channel\": \"#alerts\",\n  \"telegram_chat_id\": \"REPLACE_WITH_YOUR_CHAT_ID\"\n}",
+    "options": {}
+   },
+   "name": "CONFIG",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    260,
+    300
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "operation": "read",
+    "documentId": {
+     "__rl": true,
+     "value": "={{ $json.sheet_id }}",
+     "mode": "id"
+    },
+    "sheetName": {
+     "__rl": true,
+     "value": "={{ $json.sheet_name }}",
+     "mode": "name"
+    },
+    "options": {}
+   },
+   "name": "Read Source Rows",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    480,
+    300
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node. See README > Nodes disabled until you attach credentials.",
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// De-duplicate on record_id (falls back to email|item_ref).\n// PayRequest 2026-11-06: a retry must not send a second message for one row.\nconst rows = $input.all();\nconst seen = new Set();\nconst out = [];\nfor (const item of rows) {\n  const p = item.json;\n  const k = String(p.record_id !== undefined && p.record_id !== null\n    ? p.record_id : (String(p.email) + '|' + String(p.item_ref)));\n  if (seen.has(k)) continue;\n  seen.add(k);\n  out.push({ json: Object.assign({}, p) });\n}\nreturn out;"
+   },
+   "name": "De-duplicate Rows",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    700,
+    300
+   ],
+   "notes": "Removes duplicate record_id rows before any message is built, so one row can never produce two messages.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Deterministic template logic. Dates are relative so the fixture never goes stale.\nconst cfg = $('CONFIG').first().json;\nconst rows = $input.all();\nconst daysBetween = function (s) {\n  const t = Date.parse(String(s || '') + 'T00:00:00Z');\n  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0;\n};\n// Terminal statuses are derived from what THIS template writes back, plus 'done'.\n// Without this guard a second daily run re-sends the same message: the exact\n// defect PayRequest 2026-11-06 calls out (\"a retry must not send repeated emails\").\nconst TERMINAL = new Set((Array.isArray(cfg.terminal_status) ? cfg.terminal_status : ['done'])\n  .map(function (s) { return String(s).toLowerCase(); }));\nconst flag = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  const prev = (p.needs_action === undefined) ? true : (p.needs_action === true);\n  return prev && ok === true;\n};\n// ``putuskan`` MENETAPKAN keputusan, bukan mempersempitnya. Dipakai oleh bata yang\n// memang menjadi tempat keputusan diambil (``saring_nilai``).\n//\n// ``flag`` bersifat DAN: hasilnya ``prev && ok``. Selama ambang dipasang di dua bata,\n// bata pertama dapat mematikan baris yang seharusnya diterima bata kedua. Terukur\n// 15 Nov 2026 pada wa-trial-expiry: ``hitung_umur.batas_hari=14`` sedangkan\n// ``saring_nilai`` memakai ``days_since == 12``, sehingga bata pertama menilai\n// ``12 >= 14`` salah untuk SEMUA baris, ``needs_action`` menjadi false di mana-mana,\n// dan bata kedua tidak bisa menghidupkannya lagi - cabang true menerima 0 baris\n// (``true=0 false=4``) padahal fixture sudah benar.\nconst putuskan = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  return ok === true;\n};\n// Bata ini HANYA menurunkan days_since. Ia tidak lagi memutuskan\n// needs_action lewat ``d >= batas_hari``: keputusan itu milik ``saring_nilai``,\n// dan memasang ambang di dua tempat membuat keduanya bisa bertentangan.\nconst out = [];\nfor (const item of rows) {\n  const p = item.json;\n  const d = daysBetween(p[\"last_activity\"]);\n  out.push({ json: Object.assign({}, p, { days_since: d }) });\n}\nreturn out;"
+   },
+   "name": "Days since the last update",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    920,
+    300
+   ],
+   "notes": "Hari sejak kolom tanggal, lalu tandai lewat batas.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Deterministic template logic. Dates are relative so the fixture never goes stale.\nconst cfg = $('CONFIG').first().json;\nconst rows = $input.all();\nconst daysBetween = function (s) {\n  const t = Date.parse(String(s || '') + 'T00:00:00Z');\n  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0;\n};\n// Terminal statuses are derived from what THIS template writes back, plus 'done'.\n// Without this guard a second daily run re-sends the same message: the exact\n// defect PayRequest 2026-11-06 calls out (\"a retry must not send repeated emails\").\nconst TERMINAL = new Set((Array.isArray(cfg.terminal_status) ? cfg.terminal_status : ['done'])\n  .map(function (s) { return String(s).toLowerCase(); }));\nconst flag = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  const prev = (p.needs_action === undefined) ? true : (p.needs_action === true);\n  return prev && ok === true;\n};\n// ``putuskan`` MENETAPKAN keputusan, bukan mempersempitnya. Dipakai oleh bata yang\n// memang menjadi tempat keputusan diambil (``saring_nilai``).\n//\n// ``flag`` bersifat DAN: hasilnya ``prev && ok``. Selama ambang dipasang di dua bata,\n// bata pertama dapat mematikan baris yang seharusnya diterima bata kedua. Terukur\n// 15 Nov 2026 pada wa-trial-expiry: ``hitung_umur.batas_hari=14`` sedangkan\n// ``saring_nilai`` memakai ``days_since == 12``, sehingga bata pertama menilai\n// ``12 >= 14`` salah untuk SEMUA baris, ``needs_action`` menjadi false di mana-mana,\n// dan bata kedua tidak bisa menghidupkannya lagi - cabang true menerima 0 baris\n// (``true=0 false=4``) padahal fixture sudah benar.\nconst putuskan = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  return ok === true;\n};\nconst ambang = (cfg.ambang_nilai === undefined) ? 1 : cfg.ambang_nilai;\nconst cmp = function (a, b, o) {\n  const na = Number(a), nb = Number(b);\n  const angka = Number.isFinite(na) && Number.isFinite(nb);\n  const x = angka ? na : String(a === undefined || a === null ? '' : a);\n  const y = angka ? nb : String(b);\n  if (o === '>') return x > y;\n  if (o === '<') return x < y;\n  if (o === '>=') return x >= y;\n  if (o === '<=') return x <= y;\n  if (o === '!=') return x !== y;\n  return x === y;\n};\nconst out = [];\nfor (const item of rows) {\n  const p = item.json;\n  out.push({ json: Object.assign({}, p, { needs_action: putuskan(p, cmp(p[\"days_since\"], ambang, \">\")) }) });\n}\nreturn out;"
+   },
+   "name": "Mark rows older than 2 days",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1140,
+    300
+   ],
+   "notes": "Bandingkan satu kolom dengan ambang (>, <, >=, <=, ==, !=).",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "syarat-1",
+       "leftValue": "={{ $json.needs_action }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "name": "Needs action now?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1360,
+    300
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Deterministic template logic. Dates are relative so the fixture never goes stale.\nconst cfg = $('CONFIG').first().json;\nconst rows = $input.all();\nconst daysBetween = function (s) {\n  const t = Date.parse(String(s || '') + 'T00:00:00Z');\n  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0;\n};\n// Terminal statuses are derived from what THIS template writes back, plus 'done'.\n// Without this guard a second daily run re-sends the same message: the exact\n// defect PayRequest 2026-11-06 calls out (\"a retry must not send repeated emails\").\nconst TERMINAL = new Set((Array.isArray(cfg.terminal_status) ? cfg.terminal_status : ['done'])\n  .map(function (s) { return String(s).toLowerCase(); }));\nconst flag = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  const prev = (p.needs_action === undefined) ? true : (p.needs_action === true);\n  return prev && ok === true;\n};\n// ``putuskan`` MENETAPKAN keputusan, bukan mempersempitnya. Dipakai oleh bata yang\n// memang menjadi tempat keputusan diambil (``saring_nilai``).\n//\n// ``flag`` bersifat DAN: hasilnya ``prev && ok``. Selama ambang dipasang di dua bata,\n// bata pertama dapat mematikan baris yang seharusnya diterima bata kedua. Terukur\n// 15 Nov 2026 pada wa-trial-expiry: ``hitung_umur.batas_hari=14`` sedangkan\n// ``saring_nilai`` memakai ``days_since == 12``, sehingga bata pertama menilai\n// ``12 >= 14`` salah untuk SEMUA baris, ``needs_action`` menjadi false di mana-mana,\n// dan bata kedua tidak bisa menghidupkannya lagi - cabang true menerima 0 baris\n// (``true=0 false=4``) padahal fixture sudah benar.\nconst putuskan = function (p, ok) {\n  const st = String(p.status === undefined || p.status === null ? '' : p.status).toLowerCase();\n  if (TERMINAL.has(st)) return false;\n  return ok === true;\n};\nconst tpl = String(cfg.message_template || '');\nconst subjTpl = String(cfg.subject_template || '');\nconst larang = { days_since: 1, umur_hari: 1, needs_action: 1, skor: 1, record_id: 1 };\nconst angka = function (p) {\n  const tetap = ['nilai_utama', 'jumlah', 'total', 'amount_due', 'amount', 'nilai'];\n  for (let i = 0; i < tetap.length; i++) {\n    const k = tetap[i];\n    if (typeof p[k] === 'number') return p[k];\n  }\n  const kunci = Object.keys(p);\n  for (let i = 0; i < kunci.length; i++) {\n    const k = kunci[i];\n    if (!larang[k] && typeof p[k] === 'number') return p[k];\n  }\n  return '';\n};\nconst peta = { name: 'contact_name', item: 'item_ref', days: 'days_since',\n               value: 'nilai_utama', count: 'jumlah' };\nconst isi = function (s, p) {\n  return String(s).replace(/\\{\\{([a-z_]+)\\}\\}/g, function (m, k) {\n    let v;\n    if (k === 'value') {\n      // \"deposit of {{value}}\": ambil kolom angka yang benar-benar ada.\n      v = angka(p);\n    } else if (k === 'count') {\n      // Seluruh pemakaian {{count}} bersifat batch (\"{{count}} items\", \"{{count}}\n      // rows\"), jadi jumlah baris pada tahap ini adalah jawaban yang tepat.\n      v = (typeof p.jumlah === 'number') ? p.jumlah : rows.length;\n    } else {\n      let f = peta[k];\n      // {{days}} memakai days_since hasil hitung_umur; bila bata itu tidak ada,\n      // umur_hari dari sumber adalah nilai yang sama sebelum dihitung ulang.\n      if (k === 'days' && (p[f] === undefined || p[f] === null)) f = 'umur_hari';\n      v = (f && p[f] !== undefined && p[f] !== null) ? p[f] : '';\n    }\n    return (v === '' || v === undefined || v === null) ? '' : String(v);\n  });\n};\nreturn rows.map(function (item) {\n  const p = item.json;\n  return { json: Object.assign({}, p, {\n    recipient: p.email,\n    subject: isi(subjTpl, p),\n    message: isi(tpl, p)\n  }) };\n});"
+   },
+   "name": "Build the message",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1580,
+    180
+   ],
+   "notes": "Gabungkan template subjek/badan dengan token baris.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $json.recipient }}",
+    "subject": "={{ $json.subject }}",
+    "message": "={{ $json.message }}",
+    "options": {}
+   },
+   "name": "Email the contact",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    1800,
+    180
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node. See README > Nodes disabled until you attach credentials.",
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {},
+   "name": "Done",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    2020,
+    180
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {},
+   "name": "No Action Needed",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    2240,
+    460
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Normalise before any decision runs.\n// Trim whitespace, lower-case the fields used for matching, and rewrite\n// date-like fields as YYYY-MM-DD so a sender typing \" 2026-11-03 \" and\n// \"03/11/2026\" cannot change the outcome of a comparison.\nconst rows = $input.all();\nconst POLA_TANGGAL = /(date|_at$|^at$|tanggal|deadline|due|expiry|expires)/i;\nconst POLA_KUNCI = /(email|status|kategori|category|channel|sumber|source|tipe|type)/i;\nconst keTanggal = function (v) {\n  const s = String(v === undefined || v === null ? '' : v).trim();\n  if (!s) return s;\n  const t = Date.parse(s);\n  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : s;\n};\nconst out = [];\nfor (const item of rows) {\n  const p = item.json || {};\n  const q = {};\n  for (const k of Object.keys(p)) {\n    let v = p[k];\n    if (typeof v === 'string') {\n      v = v.trim();\n      if (POLA_TANGGAL.test(k)) v = keTanggal(v);\n      else if (POLA_KUNCI.test(k)) v = v.toLowerCase();\n    }\n    q[k] = v;\n  }\n  out.push({ json: q });\n}\nreturn out;"
+   },
+   "name": "Normalize Payload",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    590,
+    500
+   ],
+   "notes": "Runs on the first node that carries the rows the decision depends on. CONFIG sits between the trigger and the data and replaces the payload with configuration, so normalising at the trigger would normalise data that is then discarded.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Run receipt: one row per processed record, plus a run-level row when the\n// run produced no records. Written to the \"Run Log\" tab so the buyer can read\n// execution history without opening n8n.\nconst rows = $input.all();\nconst ts = new Date().toISOString();\nconst SLUG = 'age-0101-chase-lead';\nconst pilih = function (p, kunci) {\n  for (const k of kunci) {\n    const v = p[k];\n    if (v !== undefined && v !== null && String(v) !== '') return String(v);\n  }\n  return '';\n};\nconst out = [];\nfor (const item of rows) {\n  const p = item.json || {};\n  out.push({ json: {\n    triggered_at: ts,\n    record_id: pilih(p, ['record_id', 'id', 'email', 'item_ref']) || (SLUG + ':' + out.length),\n    action_taken: pilih(p, ['action_taken', 'subject', 'message_subject', 'message']).slice(0, 180)\n      || 'Processed by ' + SLUG,\n    status: 'SUCCESS',\n    workflow: SLUG,\n    rows_in_run: rows.length\n  } });\n}\nif (out.length === 0) {\n  out.push({ json: {\n    triggered_at: ts,\n    record_id: 'run:' + ts,\n    action_taken: 'Run finished with no rows to process',\n    status: 'SUCCESS',\n    workflow: SLUG,\n    rows_in_run: 0\n  } });\n}\nreturn out;"
+   },
+   "name": "Build Run Receipt",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2460,
+    180
+   ],
+   "notes": "Run receipt. Fans out to 2 destinations: the Run Log tab, plus any notification channel needed to reach three services. n8n runs these branches one after another, not in parallel, so a slow channel delays the rest - acceptable here because none of them feed each other.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "operation": "append",
+    "documentId": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.sheet_id }}",
+     "mode": "id"
+    },
+    "sheetName": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.run_log_sheet }}",
+     "mode": "name"
+    },
+    "columns": {
+     "mappingMode": "autoMapInputData",
+     "value": {}
+    },
+    "options": {}
+   },
+   "name": "Append Run Log",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    2680,
+    180
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node.",
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "select": "channel",
+    "channelId": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.slack_channel }}",
+     "mode": "name"
+    },
+    "text": "=Run receipt for *{{ $workflow.name }}*: {{ $('Build Run Receipt').first().json.rows_in_run }} row(s), status {{ $('Build Run Receipt').first().json.status }}.",
+    "otherOptions": {}
+   },
+   "name": "Post Run Summary to Slack",
+   "type": "n8n-nodes-base.slack",
+   "typeVersion": 2.2,
+   "position": [
+    2900,
+    -20
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node.",
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Failure receipt. Reached from the error output of any credential node, so\n// this node can receive items from more than one source: it never reads\n// $json directly, only item.json, and names the failing node per item.\nconst rows = $input.all();\nconst ts = new Date().toISOString();\nconst SLUG = 'age-0101-chase-lead';\nconst out = [];\nfor (const item of rows) {\n  const p = item.json || {};\n  // n8n mengirim galat pada cabang galat sebagai STRING di p.error\n  // (terukur 16 Nov 2026: {\"error\": \"simulated upstream failure [line 1]\"}),\n  // bukan objek Error. Versi pertama hanya membaca p.error.message sehingga\n  // setiap resi gagal berbunyi \"Unknown error\" - resi yang tidak memberi tahu\n  // apa pun. Kedua bentuk ditangani di sini.\n  const e = p.error;\n  let pesan;\n  if (typeof e === 'string' && e) pesan = e;\n  else if (e && typeof e === 'object') pesan = String(e.message || e.description || e.error || 'Unknown error');\n  else pesan = String(p.message || 'Unknown error');\n  out.push({ json: {\n    triggered_at: ts,\n    record_id: String(p.record_id || p.id || ('error:' + ts)),\n    action_taken: ('FAILED: ' + pesan).slice(0, 180),\n    status: 'FAILED',\n    workflow: SLUG,\n    rows_in_run: rows.length\n  } });\n}\nif (out.length === 0) {\n  out.push({ json: {\n    triggered_at: ts,\n    record_id: 'error:' + ts,\n    action_taken: 'FAILED: error branch reached with no error item',\n    status: 'FAILED',\n    workflow: SLUG,\n    rows_in_run: 0\n  } });\n}\nreturn out;"
+   },
+   "name": "Build Failure Receipt",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3120,
+    640
+   ],
+   "notes": "Receipt for the failure path. It can receive items from several nodes at once, so it never reads $json - only item.json - and each row carries status FAILED with the error message it saw.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "select": "channel",
+    "channelId": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.slack_channel }}",
+     "mode": "name"
+    },
+    "text": "=FAILED: *{{ $workflow.name }}* at {{ $json.triggered_at }} (record {{ $json.record_id }}). Open n8n > Executions to see the failing node and its error. A FAILED row was appended to the Run Log.",
+    "otherOptions": {}
+   },
+   "name": "Report Failure to Slack",
+   "type": "n8n-nodes-base.slack",
+   "typeVersion": 2.2,
+   "position": [
+    3340,
+    640
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "operation": "append",
+    "documentId": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.sheet_id }}",
+     "mode": "id"
+    },
+    "sheetName": {
+     "__rl": true,
+     "value": "={{ $('CONFIG').first().json.run_log_sheet }}",
+     "mode": "name"
+    },
+    "columns": {
+     "mappingMode": "autoMapInputData",
+     "value": {}
+    },
+    "options": {}
+   },
+   "name": "Append Failure to Run Log",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    3560,
+    640
+   ],
+   "disabled": true,
+   "notes": "DISABLED until you attach your own credential in n8n. Select the credential, then enable this node.",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {},
+   "name": "Failure Logged",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    3780,
+    640
+   ],
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "Schedule daily run": {
+   "main": [
+    [
+     {
+      "node": "CONFIG",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "CONFIG": {
+   "main": [
+    [
+     {
+      "node": "Read Source Rows",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Read Source Rows": {
+   "main": [
+    [
+     {
+      "node": "Normalize Payload",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "De-duplicate Rows": {
+   "main": [
+    [
+     {
+      "node": "Days since the last update",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Days since the last update": {
+   "main": [
+    [
+     {
+      "node": "Mark rows older than 2 days",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mark rows older than 2 days": {
+   "main": [
+    [
+     {
+      "node": "Needs action now?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Needs action now?": {
+   "main": [
+    [
+     {
+      "node": "Build the message",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "No Action Needed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build the message": {
+   "main": [
+    [
+     {
+      "node": "Email the contact",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Email the contact": {
+   "main": [
+    [
+     {
+      "node": "Done",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "No Action Needed": {
+   "main": [
+    [
+     {
+      "node": "Done",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Payload": {
+   "main": [
+    [
+     {
+      "node": "De-duplicate Rows",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Done": {
+   "main": [
+    [
+     {
+      "node": "Build Run Receipt",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build Run Receipt": {
+   "main": [
+    [
+     {
+      "node": "Append Run Log",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Post Run Summary to Slack",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build Failure Receipt": {
+   "main": [
+    [
+     {
+      "node": "Report Failure to Slack",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Report Failure to Slack": {
+   "main": [
+    [
+     {
+      "node": "Append Failure to Run Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Append Failure to Run Log": {
+   "main": [
+    [
+     {
+      "node": "Failure Logged",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Append Run Log": {
+   "main": [
+    [],
+    [
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Post Run Summary to Slack": {
+   "main": [
+    [],
+    [
+     {
+      "node": "Build Failure Receipt",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "tags": [
+  {
+   "name": "agency"
+  },
+  {
+   "name": "n8n-template"
+  },
+  {
+   "name": "sederhana"
+  },
+  {
+   "name": "skeleton:linear-email"
+  }
+ ]
+}
